@@ -39,6 +39,8 @@ import werkzeug.wsgi
 from werkzeug import urls
 from werkzeug.wsgi import wrap_file
 
+from .exceptions import ApiException
+
 try:
     import psutil
 except ImportError:
@@ -108,7 +110,8 @@ def replace_request_password(args):
 NO_POSTMORTEM = (odoo.exceptions.except_orm,
                  odoo.exceptions.AccessDenied,
                  odoo.exceptions.Warning,
-                 odoo.exceptions.RedirectWarning)
+                 odoo.exceptions.RedirectWarning,
+                 odoo.exceptions.ApiException)
 
 
 def dispatch_rpc(service_name, method, params):
@@ -609,7 +612,10 @@ class JsonRequest(WebRequest):
             response['result'] = result
 
         mime = 'application/json'
-        body = json.dumps(response, default=date_utils.json_default)
+        if request.endpoint and request.endpoint.routing and request.endpoint.routing.get('jsonrpc')==False:
+            body=json.dumps(result,default=date_utils.json_default)
+        else:
+            body = json.dumps(response, default=date_utils.json_default)
 
         return Response(
             body, status=error and error.pop('http_status', 200) or 200,
@@ -646,6 +652,10 @@ class JsonRequest(WebRequest):
             if isinstance(exception, SessionExpiredException):
                 error['code'] = 100
                 error['message'] = "Odoo Session Expired"
+            if isinstance(exception, ApiException):
+                error['code'] = exception.code
+                error['message'] = exception.message
+                return dict_response(error)
             return self._json_response(error=error)
 
     def dispatch(self):
@@ -761,6 +771,13 @@ class HttpRequest(WebRequest):
                     'redirect': redirect,
                 })
                 return werkzeug.utils.redirect('/web/login?%s' % query)
+        except ApiException as e:
+            error={
+                'code':e.code,
+                'message':e.message,
+                'data':serialize_exception(e)
+            }
+            return dict_response(error)
         except werkzeug.exceptions.HTTPException as e:
             return e
 
@@ -1651,6 +1668,10 @@ def set_header_field(headers, name, value):
     dictheaders[name] = value
     return list(dictheaders.items())
 
+def dict_response(dict_result):
+    mime = 'application/json'
+    body=json.dumps(dict_result,default=date_utils.json_default)
+    return Response(body, 200,headers=[('Content-Type', mime), ('Content-Length', len(body))])
 
 #  main wsgi handler
 root = Root()

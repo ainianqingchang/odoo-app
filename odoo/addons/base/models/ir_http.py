@@ -18,8 +18,8 @@ import werkzeug.urls
 import werkzeug.utils
 
 import odoo
-from odoo import api, http, models, tools, SUPERUSER_ID
-from odoo.exceptions import AccessDenied, AccessError
+from odoo import api, http, models, tools, SUPERUSER_ID, fields
+from odoo.exceptions import AccessDenied, AccessError, ApiException
 from odoo.http import request, content_disposition
 from odoo.tools import consteq, pycompat
 from odoo.tools.mimetypes import guess_mimetype
@@ -120,9 +120,16 @@ class IrHttp(models.AbstractModel):
                     # All other exceptions mean undetermined status (e.g. connection pool full),
                     # let them bubble up
                     request.session.logout(keep_db=True)
+            elif request.httprequest.headers.get("Authorization") and auth_method == 'user':
+                token=request.httprequest.headers.get("Authorization").split(" ")
+                user=request.env['res.users'].search([('token','=',token[1]),('expire_time', '>', fields.datetime.now())])
+                if user:
+                    request.uid=user.id
+                else:
+                    raise ApiException(101,'token expire or invalid')
             if request.uid is None:
                 getattr(cls, "_auth_method_%s" % auth_method)()
-        except (AccessDenied, http.SessionExpiredException, werkzeug.exceptions.HTTPException):
+        except (AccessDenied, http.SessionExpiredException, werkzeug.exceptions.HTTPException,ApiException):
             raise
         except Exception:
             _logger.info("Exception during request Authentication.", exc_info=True)

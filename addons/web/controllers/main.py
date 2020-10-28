@@ -925,6 +925,26 @@ class Home(http.Controller):
 
         return http.local_redirect(self._login_redirect(uid), keep_hash=True)
 
+
+    @http.route('/user_login', type='json',jsonrpc=False, csrf=False, cors='*',auth='none')
+    def login(self,req,**kw):
+        username = req.jsonrequest.get('username')
+        password = req.jsonrequest.get('password')
+        user = request.env['res.users'].sudo().search([('login', '=', username)])
+        if not user:
+            return {'code': -1, 'message': '用户名不存在!'}
+        try:
+            user.with_user(user)
+            user.env.uid = user.id
+            user._check_credentials(password)
+        except AccessDenied:
+            return {'code': -1, 'message': '密码认证失败!'}
+        user.refresh_token()
+        return {
+            'code': 0,
+            'token': user.token
+        }
+
 class WebClient(http.Controller):
 
     @http.route('/web/webclient/csslist', type='json', auth="none")

@@ -1,4 +1,8 @@
 # -*- coding: utf-8 -*-
+import datetime
+import uuid
+import random
+
 import babel.dates
 import pytz
 import base64
@@ -400,3 +404,36 @@ class ResCompany(models.Model):
         b64_val = self._get_asset_style_b64()
         if b64_val != asset_attachment.datas:
             asset_attachment.write({'datas': b64_val})
+
+class TinyResUser(models.Model):
+    _inherit = 'res.users'
+
+    token = fields.Char(size=255,require=True,string='Token',help='Token',default=lambda self: self.create_token())
+    expire_time = fields.Datetime(string='Date To', help='Date To',default=fields.datetime.now())
+    token_is_valid=fields.Boolean(string='token valid',compute='_token_is_valid')
+
+
+    def create_token(self):
+        str = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+        uuid_str = uuid.uuid1().__str__().replace("-", "")
+        token = ""
+        for inx, c in enumerate(uuid_str):
+            token += random.choice([1, 0]) and c or c.upper()
+            if inx % 2 == 1:
+                token += random.choice(str)
+        return token
+
+
+    @api.model
+    def _token_is_valid(self):
+        self.token_is_valid=self.expire_time>fields.Datetime.now()
+
+    @api.model
+    def refresh_expire(self):
+        if self.expire_time<fields.datetime.now()+datetime.timedelta(seconds=3600):
+            self.expire_time=fields.Datetime.now()+datetime.timedelta(seconds=7200)
+
+    @api.model
+    def refresh_token(self):
+        self.token=self.create_token()
+        self.expire_time = fields.Datetime.now() + datetime.timedelta(seconds=7200)
